@@ -257,9 +257,25 @@ export default function Home() {
             {/* Action bar - Copy, Feedback */}
             <div className="border-t pt-4 mt-6">
               <div className="flex flex-wrap justify-between items-center gap-4">
+                {" "}
                 <div className="flex space-x-2">
+                  {" "}
                   <CopyToClipboard
-                    text={`${statement}\n\nVerdict: ${result.verdict}\n\n${result.explanation}`}
+                    text={`${statement}\n\nVerdict: ${result.verdict}\n\n${
+                      result.explanation
+                    }${
+                      result.sources && result.sources.length > 0
+                        ? "\n\nSources:\n" +
+                          result.sources
+                            .map(
+                              (source, index) =>
+                                `${index + 1}. ${source.name || "Source"}: ${
+                                  source.url
+                                }`
+                            )
+                            .join("\n")
+                        : ""
+                    }`}
                     label="Copy result"
                   />
                   {result.usedWebScraping !== undefined && (
@@ -277,7 +293,6 @@ export default function Home() {
                     </div>
                   )}
                 </div>
-
                 <ResultFeedback onFeedback={handleFeedback} />
               </div>
             </div>
