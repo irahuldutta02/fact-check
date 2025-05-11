@@ -11,11 +11,12 @@ import VerdictBadge from "./components/VerdictBadge";
 
 const MAX_CHAR_COUNT = 500;
 const EXAMPLE_STATEMENTS = [
-  "The Great Wall of China is visible from space with the naked eye.",
   "Drinking eight glasses of water a day is essential for health.",
   "Albert Einstein failed math as a student.",
   "Humans only use 10% of their brains.",
   "Bulls are angered by the color red.",
+  "Goldfish have a three-second memory.",
+  "India was never colonized by any European power.",
 ];
 
 export default function Home() {
@@ -274,7 +275,7 @@ export default function Home() {
             <div className="border-t pt-4 mt-6">
               <div className="flex flex-wrap justify-between items-center gap-4">
                 {" "}
-                <div className="flex space-x-2">
+                <div className="flex space-x-2 flex-wrap gap-2">
                   {" "}
                   <CopyToClipboard
                     text={`Statement: ${statement}\n\nVerdict: ${

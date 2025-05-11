@@ -1,6 +1,11 @@
 "use client";
 
-import { FaCheck, FaExclamationTriangle, FaTimes } from "react-icons/fa";
+import {
+  FaCheck,
+  FaExclamationTriangle,
+  FaQuestionCircle,
+  FaTimes,
+} from "react-icons/fa";
 
 export default function VerdictBadge({ verdict }) {
   const getVerdictStyle = () => {
@@ -22,6 +27,12 @@ export default function VerdictBadge({ verdict }) {
           bgColor: "bg-verdict-partial",
           textColor: "text-white",
           icon: <FaExclamationTriangle className="mr-2" />,
+        };
+      case "CONTEXT NOT CLEAR":
+        return {
+          bgColor: "bg-yellow-500",
+          textColor: "text-white",
+          icon: <FaQuestionCircle className="mr-2" />,
         };
       default:
         return {

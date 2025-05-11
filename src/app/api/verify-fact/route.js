@@ -38,7 +38,10 @@ export async function POST(request) {
     const schema = {
       type: "object",
       properties: {
-        verdict: { type: "string", enum: ["TRUE", "FALSE", "PARTIALLY TRUE"] },
+        verdict: {
+          type: "string",
+          enum: ["TRUE", "FALSE", "PARTIALLY TRUE", "CONTEXT NOT CLEAR"],
+        },
         explanation: { type: "string" },
         sources: {
           type: "array",
@@ -71,7 +74,8 @@ export async function POST(request) {
 
     // Create a structured prompt that includes scraped data for fact checking
     const prompt = `
-      Act as a fact-checking expert. Analyze this statement and determine if it's TRUE, FALSE, or PARTIALLY TRUE.
+      Act as a fact-checking expert. Analyze this statement and determine if it's TRUE, FALSE, PARTIALLY TRUE, or CONTEXT NOT CLEAR.
+      If the statement is ambiguous, lacks sufficient context to be verified, or is too vague, use the verdict "CONTEXT NOT CLEAR".
       
       Statement: "${statement}"
       
@@ -101,7 +105,7 @@ export async function POST(request) {
       Based ONLY on the real-time data provided above,`
           : `The web scraping attempt failed, so you'll need to use your training data to`
       } carefully analyze the statement and provide:
-      1. A verdict (TRUE, FALSE, or PARTIALLY TRUE)
+      1. A verdict (TRUE, FALSE, PARTIALLY TRUE, or CONTEXT NOT CLEAR)
       2. A detailed explanation of your reasoning with source citations in the format [1], [2], etc.
       3. Sources that support your conclusion with URLs (from the provided sources)
       
@@ -127,7 +131,7 @@ export async function POST(request) {
           : [];
 
         parsedResponse = {
-          verdict: rawParsedResponse.verdict || "UNKNOWN",
+          verdict: rawParsedResponse.verdict || "UNKNOWN", // Ensure UNKNOWN is a fallback if Gemini fails schema
           explanation: explanationFromGemini, // Will be updated with new citation indices
           sources: [], // Will be populated with re-indexed sources
           confidence: rawParsedResponse.confidence || 0.5,
@@ -197,8 +201,16 @@ export async function POST(request) {
 
         if (verdictMatch && verdictMatch[1]) {
           // Create a structured response manually
+          let potentialVerdict = verdictMatch[1].trim().toUpperCase();
+          if (
+            !["TRUE", "FALSE", "PARTIALLY TRUE", "CONTEXT NOT CLEAR"].includes(
+              potentialVerdict
+            )
+          ) {
+            potentialVerdict = "UNKNOWN"; // Fallback for manual parsing
+          }
           parsedResponse = {
-            verdict: verdictMatch[1].trim(),
+            verdict: potentialVerdict,
             explanation:
               explanationMatch && explanationMatch[1]
                 ? explanationMatch[1].trim()
