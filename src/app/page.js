@@ -6,7 +6,6 @@ import { FaEraser, FaLightbulb, FaLink, FaSpinner } from "react-icons/fa";
 import CopyToClipboard from "./components/CopyToClipboard";
 import LoadingSkeleton from "./components/LoadingSkeleton";
 import ResultFeedback from "./components/ResultFeedback";
-import TrendingSuggestions from "./components/TrendingSuggestions";
 import VerdictBadge from "./components/VerdictBadge";
 
 const MAX_CHAR_COUNT = 500;
@@ -139,7 +138,7 @@ export default function Home() {
               className="block text-primary-navy font-medium"
             >
               Enter a statement to verify:
-            </label>
+            </label>{" "}
             <div className="flex space-x-2">
               <button
                 onClick={useExampleStatement}
@@ -150,7 +149,6 @@ export default function Home() {
             </div>
           </div>
 
-          <TrendingSuggestions onSelect={(topic) => setStatement(topic)} />
           <div className="relative">
             <textarea
               id="statement"
