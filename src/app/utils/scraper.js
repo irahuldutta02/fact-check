@@ -9,29 +9,100 @@ const agent = new https.Agent({
 });
 
 /**
- * Scrape search results for a given query
+ * Scrape search results for a given query from Google
  * @param {string} query - The search query
  * @param {number} maxResults - Maximum number of results to return
  * @returns {Promise<Array>} - Array of scraped results
  */
-export async function scrapeSearchResults(query, maxResults = 5) {
+async function scrapeGoogleSearchResults(query, maxResults = 5) {
+  console.log(`Scraping Google search results for: ${query}`);
   try {
-    // Format the query for a search URL
-    const searchQuery = encodeURIComponent(query);
-
-    // Using DuckDuckGo as it's more scraping-friendly (adjust as needed)
-    const url = `https://html.duckduckgo.com/html/?q=${searchQuery}`;
-
-    const response = await axios.get(url, {
+    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(
+      query
+    )}&hl=en`; // Use Google search URL
+    const response = await axios.get(searchUrl, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Language": "en-US,en;q=0.9",
       },
-      httpsAgent: agent, // Use the custom agent
+      httpsAgent: agent,
+      timeout: 10000, // Added a 10-second timeout for the request itself
     });
+
+    // Log a snippet of the response to check for CAPTCHAs or unexpected HTML on Vercel
+    if (response.data && typeof response.data === "string") {
+      console.log(
+        "Google Response HTML Snippet (first 500 chars):",
+        response.data.substring(0, 500)
+      );
+      if (response.data.toLowerCase().includes("captcha")) {
+        console.warn("CAPTCHA detected in Google search response.");
+      }
+      if (response.data.toLowerCase().includes("before you continue")) {
+        console.warn(
+          "'Before you continue' page (likely consent/CAPTCHA) detected in Google search response."
+        );
+      }
+    }
+
+    const $ = load(response.data);
+    const results = [];
+
+    // Parse the search results
+    $(".tF2Cxc").each((index, element) => {
+      if (index >= maxResults) return false;
+      const titleElement = $(element).find(".DKV0Md");
+      const linkElement = $(element).find(".yuRUbf a");
+      const snippetElement = $(element).find(".VwiC3b");
+
+      const title = titleElement.text().trim();
+      const url = linkElement.attr("href");
+      const snippet = snippetElement.text().trim();
+
+      results.push({
+        title,
+        url,
+        snippet,
+      });
+    });
+
+    return results;
+  } catch (error) {
+    console.error("Error scraping Google search results:", error);
+    return []; // Return empty array on error
+  }
+}
+
+/**
+ * Scrape search results for a given query from DuckDuckGo
+ * @param {string} query - The search query
+ * @param {number} maxResults - Maximum number of results to return
+ * @returns {Promise<Array>} - Array of scraped results
+ */
+async function scrapeDuckDuckGoSearchResults(query, maxResults = 5) {
+  console.log(`Scraping DuckDuckGo search results for: ${query}`);
+  try {
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(
+      query
+    )}`;
+    const response = await axios.get(searchUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      httpsAgent: agent,
+      timeout: 10000, // Added a 10-second timeout
+    });
+
+    // Log a snippet of the response for DDG as well for consistency
+    if (response.data && typeof response.data === "string") {
+      console.log(
+        "DuckDuckGo Response HTML Snippet (first 500 chars):",
+        response.data.substring(0, 500)
+      );
+    }
 
     const $ = load(response.data);
     const results = [];
@@ -75,7 +146,7 @@ export async function scrapeSearchResults(query, maxResults = 5) {
 
     return results;
   } catch (error) {
-    console.error("Error scraping search results:", error);
+    console.error("Error scraping DuckDuckGo search results:", error);
     return [];
   }
 }
@@ -164,7 +235,7 @@ export async function getScrapedFactCheckData(query) {
   try {
     // Step 1: Scrape search results
     console.log("Scraping search results for query:", query);
-    const searchResults = await scrapeSearchResults(query);
+    const searchResults = await scrapeDuckDuckGoSearchResults(query);
 
     if (searchResults.length === 0) {
       console.log("No search results found");
