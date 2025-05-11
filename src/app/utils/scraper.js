@@ -1,6 +1,12 @@
 // Web scraping utility functions
 import axios from "axios";
 import { load } from "cheerio";
+import https from "https"; // Import https module
+
+// Create an https agent to ignore SSL certificate errors
+const agent = new https.Agent({
+  rejectUnauthorized: false,
+});
 
 /**
  * Scrape search results for a given query
@@ -24,6 +30,7 @@ export async function scrapeSearchResults(query, maxResults = 5) {
           "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
       },
+      httpsAgent: agent, // Use the custom agent
     });
 
     const $ = load(response.data);
@@ -79,6 +86,10 @@ export async function scrapeSearchResults(query, maxResults = 5) {
  * @returns {Promise<string>} - Extracted main content
  */
 export async function scrapeWebPage(url) {
+  if (!url) {
+    console.warn("Attempted to scrape an undefined or null URL.");
+    return { title: "Invalid URL", content: "No content due to invalid URL." };
+  }
   try {
     // Ensure URL has a valid protocol
     if (!url) {
@@ -116,7 +127,8 @@ export async function scrapeWebPage(url) {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
-      timeout: 10000, // 10 second timeout
+      httpsAgent: agent, // Use the custom agent
+      timeout: 15000, // 15 seconds timeout
     });
 
     const $ = load(response.data);

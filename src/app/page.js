@@ -25,6 +25,7 @@ export default function Home() {
   const [error, setError] = useState(null);
   const [feedbackData, setFeedbackData] = useState({});
   const textareaRef = useRef(null);
+  const [resultDateTime, setResultDateTime] = useState(null); // Added to store date/time of result
 
   const verifyFact = async () => {
     if (!statement.trim()) return;
@@ -51,6 +52,7 @@ export default function Home() {
 
       const data = await response.json();
       setResult(data);
+      setResultDateTime(new Date()); // Set current date and time
     } catch (err) {
       console.error("Error verifying fact:", err);
       setError(err.message || "An unexpected error occurred");
@@ -221,8 +223,22 @@ export default function Home() {
         {/* Results Section - Data */}
         {result && !loading && (
           <div className="bg-white rounded-lg shadow-md p-6 animate-fadeIn">
-            <div className="mb-6">
+            <div className="mb-6 flex flex-wrap items-center justify-between">
               <VerdictBadge verdict={result.verdict} />
+              {resultDateTime && (
+                <p className="text-sm text-gray-500 mt-2 sm:mt-0">
+                  Verified on:{" "}
+                  {resultDateTime.toLocaleString(undefined, {
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                    hour12: true,
+                    timeZoneName: "short",
+                  })}
+                </p>
+              )}
             </div>
             <div className="mb-6">
               <h2 className="text-xl font-bold text-primary-navy mb-3">
@@ -247,7 +263,7 @@ export default function Home() {
                         rel="noopener noreferrer"
                         className="text-primary-blue hover:underline break-words"
                       >
-                        {source.name || source.url}
+                        [{source.index}] {source.name || source.url}
                       </a>
                     </li>
                   ))}
@@ -261,20 +277,35 @@ export default function Home() {
                 <div className="flex space-x-2">
                   {" "}
                   <CopyToClipboard
-                    text={`${statement}\n\nVerdict: ${result.verdict}\n\n${
-                      result.explanation
-                    }${
+                    text={`Statement: ${statement}\n\nVerdict: ${
+                      result.verdict
+                    } (Verified on: ${
+                      resultDateTime
+                        ? resultDateTime.toLocaleString(undefined, {
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                            hour12: true,
+                            timeZoneName: "short",
+                          })
+                        : "N/A"
+                    })\n\nAnalysis: ${result.explanation}${
                       result.sources && result.sources.length > 0
                         ? "\n\nSources:\n" +
                           result.sources
                             .map(
-                              (source, index) =>
-                                `${index + 1}. ${source.name || "Source"}: ${
-                                  source.url
-                                }`
+                              (source) =>
+                                `[${source.index}] ${
+                                  source.name || "Source"
+                                }: ${source.url}`
                             )
                             .join("\n")
                         : ""
+                    }
+                    \nFact checked by: ${
+                      typeof window !== "undefined" ? window.location.href : ""
                     }`}
                     label="Copy result"
                   />

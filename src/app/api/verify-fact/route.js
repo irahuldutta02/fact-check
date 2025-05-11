@@ -33,8 +33,35 @@ export async function POST(request) {
       scrapedData = { searchResults: [], contentDetails: [] };
     } // Initialize the Gemini AI
     const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY);
+
+    // Define the response schema for Gemini
+    const schema = {
+      type: "object",
+      properties: {
+        verdict: { type: "string", enum: ["TRUE", "FALSE", "PARTIALLY TRUE"] },
+        explanation: { type: "string" },
+        sources: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              index: { type: "integer" },
+              name: { type: "string" },
+              url: { type: "string" },
+            },
+            required: ["index", "name", "url"],
+          },
+        },
+        confidence: { type: "number", minimum: 0, maximum: 1 },
+      },
+      required: ["verdict", "explanation", "sources", "confidence"],
+    };
     const model = genAI.getGenerativeModel({
       model: "gemini-2.0-flash",
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: schema,
+      },
     });
 
     // Check if we have scraped data
@@ -71,41 +98,102 @@ export async function POST(request) {
             }\n`
         )
         .join("\n\n")}
-        
       Based ONLY on the real-time data provided above,`
           : `The web scraping attempt failed, so you'll need to use your training data to`
-      } carefully analyze the statement and provide:carefully analyze the statement and provide:
+      } carefully analyze the statement and provide:
       1. A verdict (TRUE, FALSE, or PARTIALLY TRUE)
-      2. A detailed explanation of your reasoning based on the provided web data
+      2. A detailed explanation of your reasoning with source citations in the format [1], [2], etc.
       3. Sources that support your conclusion with URLs (from the provided sources)
       
-      Format the response as a JSON object with the following structure:
-      {
-        "verdict": "TRUE/FALSE/PARTIALLY TRUE",
-        "explanation": "detailed explanation...",
-        "sources": [
-          {"name": "Source Name", "url": "https://source.url"}
-        ]
-      }
-    `;
-
-    // Get response from Gemini
+      Make sure to reference specific sources in your explanation using numbered citations like [1], [2], etc. that correspond to the source index in your response.
+    `; // Get response from Gemini
     console.log("Sending request to Gemini API with scraped data...");
     const result = await model.generateContent(prompt);
     const response = result.response;
-    const text = response.text(); // Parse the JSON response from Gemini
+    const text = response.text();
+
+    // Parse the JSON response from Gemini
     let parsedResponse;
     try {
       // Extract the JSON part from the response, handling any text before or after
       const jsonMatch = text.match(/(\{[\s\S]*\})/);
       if (jsonMatch && jsonMatch[0]) {
-        parsedResponse = JSON.parse(jsonMatch[0]);
+        let rawParsedResponse = JSON.parse(jsonMatch[0]);
+
+        const explanationFromGemini =
+          rawParsedResponse.explanation || "No explanation provided.";
+        const sourcesFromGemini = Array.isArray(rawParsedResponse.sources)
+          ? rawParsedResponse.sources
+          : [];
+
+        parsedResponse = {
+          verdict: rawParsedResponse.verdict || "UNKNOWN",
+          explanation: explanationFromGemini, // Will be updated with new citation indices
+          sources: [], // Will be populated with re-indexed sources
+          confidence: rawParsedResponse.confidence || 0.5,
+          usedWebScraping: hasScrapedData,
+        };
+
+        if (sourcesFromGemini.length > 0) {
+          const geminiIndexToNewIndexMap = {};
+          const finalProcessedSources = [];
+          let newSequentialIndex = 1;
+
+          sourcesFromGemini.forEach((source) => {
+            const originalGeminiIndex = source.index; // As per schema, this is an integer
+
+            // We expect originalGeminiIndex to be present and a number due to the schema.
+            // Map this originalGeminiIndex to a newSequentialIndex if not already mapped.
+            if (
+              originalGeminiIndex !== undefined &&
+              originalGeminiIndex !== null &&
+              !geminiIndexToNewIndexMap.hasOwnProperty(originalGeminiIndex)
+            ) {
+              geminiIndexToNewIndexMap[originalGeminiIndex] =
+                newSequentialIndex;
+              finalProcessedSources.push({
+                index: newSequentialIndex, // New sequential index
+                name: source.name, // Name from Gemini (required by schema)
+                url: source.url, // URL from Gemini (required by schema)
+              });
+              newSequentialIndex++;
+            }
+            // If originalGeminiIndex is undefined, null, or already mapped, we skip creating a new
+            // entry in finalProcessedSources for it based on *that specific originalGeminiIndex*.
+            // This ensures each unique, valid original index from Gemini maps to one new sequential index.
+          });
+
+          // Sort the final sources by their new sequential index for consistent output order.
+          finalProcessedSources.sort((a, b) => a.index - b.index);
+          parsedResponse.sources = finalProcessedSources;
+
+          // Update explanation to use the new sequential indices
+          if (Object.keys(geminiIndexToNewIndexMap).length > 0) {
+            parsedResponse.explanation = explanationFromGemini.replace(
+              /\[(\d+)\]/g,
+              (match, originalGeminiIndexStr) => {
+                const originalGeminiIndex = parseInt(
+                  originalGeminiIndexStr,
+                  10
+                );
+                if (
+                  geminiIndexToNewIndexMap.hasOwnProperty(originalGeminiIndex)
+                ) {
+                  return `[${geminiIndexToNewIndexMap[originalGeminiIndex]}]`;
+                }
+                // If a citation [N] exists in explanation but N wasn't a mapped Gemini index, keep original.
+                return match;
+              }
+            );
+          }
+        }
       } else {
         // Fallback: If AI doesn't return valid JSON, attempt to parse the content manually
         const verdictMatch = text.match(/verdict[\"'\s:]+([A-Z\s]+)/i);
         const explanationMatch = text.match(
           /explanation[\"'\s:]+([^"]+?)(?:,|\n|source)/i
         );
+        const confidenceMatch = text.match(/confidence[\"'\s:]+([0-9.]+)/i);
 
         if (verdictMatch && verdictMatch[1]) {
           // Create a structured response manually
@@ -116,17 +204,27 @@ export async function POST(request) {
                 ? explanationMatch[1].trim()
                 : "The AI analyzed the statement but didn't provide a detailed explanation.",
             sources: [],
+            confidence:
+              confidenceMatch && confidenceMatch[1]
+                ? parseFloat(confidenceMatch[1])
+                : 0.5,
           };
 
           // Try to extract sources if they exist
           const sourcesRegex =
-            /source.*?name[\"'\s:]+([^"]+)[\"'\s,]+url[\"'\s:]+([^"]+)/gi;
+            /source.*?(?:index[\"'\s:]+([0-9]+)[\"'\s,]+)?name[\"'\s:]+([^"]+)[\"'\s,]+url[\"'\s:]+([^"]+)/gi;
           let sourceMatch;
+          let sourceIndex = 1;
+
           while ((sourceMatch = sourcesRegex.exec(text)) !== null) {
-            if (sourceMatch[1] && sourceMatch[2]) {
+            const [_, indexStr, name, url] = sourceMatch;
+            const index = indexStr ? parseInt(indexStr, 10) : sourceIndex++;
+
+            if (name && url) {
               parsedResponse.sources.push({
-                name: sourceMatch[1].trim(),
-                url: sourceMatch[2].trim(),
+                index,
+                name: name.trim(),
+                url: url.trim(),
               });
             }
           }
@@ -136,9 +234,6 @@ export async function POST(request) {
           );
         }
       }
-
-      // Add information about web scraping status
-      parsedResponse.usedWebScraping = hasScrapedData;
     } catch (error) {
       console.error("Failed to parse Gemini response:", error);
       return Response.json(
