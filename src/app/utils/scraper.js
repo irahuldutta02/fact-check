@@ -8,6 +8,33 @@ const agent = new https.Agent({
   rejectUnauthorized: false,
 });
 
+// Helper to extract last updated date from HTML
+function extractLastUpdated($) {
+  // Try common meta tags and selectors
+  const metaDate =
+    $("meta[itemprop='dateModified']").attr("content") ||
+    $("meta[property='article:modified_time']").attr("content") ||
+    $("meta[name='last-modified']").attr("content") ||
+    $("meta[name='Last-Modified']").attr("content") ||
+    $("time[datetime]").attr("datetime") ||
+    $(
+      ".last-updated, .lastModified, .date-modified, .updated, .mod-date"
+    ).text();
+  if (metaDate && typeof metaDate === "string") {
+    // Try to parse as date
+    const d = new Date(metaDate.trim());
+    if (!isNaN(d.getTime())) return d.toISOString();
+  }
+  // Try to find a date in text
+  const bodyText = $("body").text();
+  const dateMatch = bodyText.match(/(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})/);
+  if (dateMatch) {
+    const d = new Date(dateMatch[0]);
+    if (!isNaN(d.getTime())) return d.toISOString();
+  }
+  return null;
+}
+
 /**
  * Scrape search results for a given query from Google
  * @param {string} query - The search query
@@ -15,13 +42,11 @@ const agent = new https.Agent({
  * @returns {Promise<Array>} - Array of scraped results
  */
 async function scrapeGoogleSearchResults(query, maxResults = 5) {
-  console.log(`[GoogleScraper] ENTER: scrapeGoogleSearchResults for: ${query}`);
   let response;
   try {
     const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(
       query
     )}&hl=en`;
-    console.log(`[GoogleScraper] Requesting URL: ${searchUrl}`);
     response = await axios.get(searchUrl, {
       headers: {
         "User-Agent":
@@ -31,23 +56,12 @@ async function scrapeGoogleSearchResults(query, maxResults = 5) {
       httpsAgent: agent,
       timeout: 10000,
     });
-    console.log(
-      `[GoogleScraper] Response received. Status: ${response.status}`
-    );
     if (response.data && typeof response.data === "string") {
-      console.log(
-        "[GoogleScraper] Google Response HTML Snippet (first 500 chars):",
-        response.data.substring(0, 500)
-      );
       if (response.data.toLowerCase().includes("captcha")) {
-        console.warn(
-          "[GoogleScraper] CAPTCHA detected in Google search response."
-        );
+        // CAPTCHA detected
       }
       if (response.data.toLowerCase().includes("before you continue")) {
-        console.warn(
-          "[GoogleScraper] 'Before you continue' page (likely consent/CAPTCHA) detected in Google search response."
-        );
+        // Consent/CAPTCHA page detected
       }
     }
     const $ = load(response.data);
@@ -67,13 +81,8 @@ async function scrapeGoogleSearchResults(query, maxResults = 5) {
         source: "Google",
       });
     });
-    console.log(`[GoogleScraper] Parsed ${results.length} results.`);
     return results;
   } catch (error) {
-    console.error(
-      "[GoogleScraper] ERROR:",
-      error && error.toString ? error.toString() : error
-    );
     if (error && error.response) {
       console.error(
         "[GoogleScraper] Error response status:",
@@ -90,6 +99,10 @@ async function scrapeGoogleSearchResults(query, maxResults = 5) {
         String(response.data).substring(0, 500)
       );
     }
+    console.error(
+      "[GoogleScraper] ERROR:",
+      error && error.toString ? error.toString() : error
+    );
     return [];
   }
 }
@@ -101,15 +114,11 @@ async function scrapeGoogleSearchResults(query, maxResults = 5) {
  * @returns {Promise<Array>} - Array of scraped results
  */
 async function scrapeDuckDuckGoSearchResults(query, maxResults = 5) {
-  console.log(
-    `[DuckDuckGoScraper] ENTER: scrapeDuckDuckGoSearchResults for: ${query}`
-  );
   let response;
   try {
     const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(
       query
     )}`;
-    console.log(`[DuckDuckGoScraper] Requesting URL: ${searchUrl}`);
     response = await axios.get(searchUrl, {
       headers: {
         "User-Agent":
@@ -119,14 +128,8 @@ async function scrapeDuckDuckGoSearchResults(query, maxResults = 5) {
       httpsAgent: agent,
       timeout: 10000,
     });
-    console.log(
-      `[DuckDuckGoScraper] Response received. Status: ${response.status}`
-    );
     if (response.data && typeof response.data === "string") {
-      console.log(
-        "[DuckDuckGoScraper] DuckDuckGo Response HTML Snippet (first 500 chars):",
-        response.data.substring(0, 500)
-      );
+      // Response HTML snippet
     }
     const $ = load(response.data);
     const results = [];
@@ -148,10 +151,7 @@ async function scrapeDuckDuckGoSearchResults(query, maxResults = 5) {
             url = decodeURIComponent(encodedUrl);
           }
         } catch (e) {
-          console.error(
-            "[DuckDuckGoScraper] Error extracting URL from DuckDuckGo redirect:",
-            e
-          );
+          // Error extracting URL from DuckDuckGo redirect
         }
       }
       const snippet = snippetElement.text().trim();
@@ -162,13 +162,8 @@ async function scrapeDuckDuckGoSearchResults(query, maxResults = 5) {
         source: "DuckDuckGo",
       });
     });
-    console.log(`[DuckDuckGoScraper] Parsed ${results.length} results.`);
     return results;
   } catch (error) {
-    console.error(
-      "[DuckDuckGoScraper] ERROR:",
-      error && error.toString ? error.toString() : error
-    );
     if (error && error.response) {
       console.error(
         "[DuckDuckGoScraper] Error response status:",
@@ -185,6 +180,10 @@ async function scrapeDuckDuckGoSearchResults(query, maxResults = 5) {
         String(response.data).substring(0, 500)
       );
     }
+    console.error(
+      "[DuckDuckGoScraper] ERROR:",
+      error && error.toString ? error.toString() : error
+    );
     return [];
   }
 }
@@ -196,7 +195,6 @@ async function scrapeDuckDuckGoSearchResults(query, maxResults = 5) {
  * @returns {Promise<Array>} - Array of combined, de-duplicated results
  */
 async function scrapeSearchResults(query, maxResults = 5) {
-  console.log(`[CombinedScraper] ENTER: scrapeSearchResults for: ${query}`);
   const [google, duckduckgo] = await Promise.allSettled([
     scrapeGoogleSearchResults(query, maxResults),
     scrapeDuckDuckGoSearchResults(query, maxResults),
@@ -215,9 +213,6 @@ async function scrapeSearchResults(query, maxResults = 5) {
     seen.add(r.url);
     return true;
   });
-  console.log(
-    `[CombinedScraper] Returning ${deduped.length} combined results.`
-  );
   return deduped.slice(0, maxResults);
 }
 
@@ -228,8 +223,11 @@ async function scrapeSearchResults(query, maxResults = 5) {
  */
 export async function scrapeWebPage(url) {
   if (!url) {
-    console.warn("Attempted to scrape an undefined or null URL.");
-    return { title: "Invalid URL", content: "No content due to invalid URL." };
+    return {
+      title: "Invalid URL",
+      content: "No content due to invalid URL.",
+      lastUpdated: null,
+    };
   }
   try {
     // Ensure URL has a valid protocol
@@ -256,12 +254,9 @@ export async function scrapeWebPage(url) {
           url = decodeURIComponent(encodedUrl);
         }
       } catch (e) {
-        console.error("Error extracting URL from DuckDuckGo redirect:", e);
         return "";
       }
     }
-
-    console.log("Scraping URL:", url);
 
     const response = await axios.get(url, {
       headers: {
@@ -277,6 +272,9 @@ export async function scrapeWebPage(url) {
     // Remove script and style elements
     $("script, style, nav, footer, header, aside").remove();
 
+    // Extract last updated date
+    const lastUpdated = extractLastUpdated($);
+
     // Extract text from main content areas
     // This is a basic implementation - may need refinement for specific sites
     const mainContent = $("main, article, .content, #content, .main, #main")
@@ -285,14 +283,20 @@ export async function scrapeWebPage(url) {
       .trim();
 
     if (mainContent.length > 100) {
-      return mainContent;
+      return { content: mainContent, lastUpdated };
     }
 
     // Fallback to body text if no main content areas are found
-    return $("body").text().replace(/\s+/g, " ").trim();
+    return {
+      content: $("body").text().replace(/\s+/g, " ").trim(),
+      lastUpdated,
+    };
   } catch (error) {
-    console.error("Error scraping web page:", error);
-    return "";
+    console.error(
+      "[scrapeWebPage] ERROR:",
+      error && error.toString ? error.toString() : error
+    );
+    return { content: "", lastUpdated: null };
   }
 }
 
@@ -304,55 +308,45 @@ export async function scrapeWebPage(url) {
 export async function getScrapedFactCheckData(query) {
   try {
     // Step 1: Scrape search results
-    console.log("[FactCheck] Scraping search results for query:", query);
     const searchResults = await scrapeSearchResults(query, 5);
     if (searchResults.length === 0) {
-      console.log("[FactCheck] No search results found");
       return {
         searchResults: [],
         contentDetails: [],
       };
     }
-    console.log(`[FactCheck] Found ${searchResults.length} search results`);
     // Step 2: Scrape the content of the first few search results
     const contentPromises = searchResults
       .slice(0, 3)
       .map(async (result, index) => {
         if (result.url) {
           try {
-            console.log(
-              `[FactCheck] Scraping content from result ${index + 1} [${
-                result.source
-              }]: ${result.url}`
-            );
-            const content = await scrapeWebPage(result.url);
+            const { content, lastUpdated } = await scrapeWebPage(result.url);
             return {
               ...result,
               content: content.substring(0, 2000),
+              lastUpdated,
             };
           } catch (e) {
-            console.error(
-              `[FactCheck] Error scraping content from ${result.url}:`,
-              e.message
-            );
             return result;
           }
         }
         return result;
       });
-    const resultsWithContent = await Promise.all(contentPromises);
-    const validResults = resultsWithContent.filter(
-      (result) => result.content && result.content.length > 0
-    );
-    console.log(
-      `[FactCheck] Successfully scraped content from ${validResults.length} pages`
-    );
+    let resultsWithContent = await Promise.all(contentPromises);
+    // Filter: Only keep articles with a valid lastUpdated date, and sort by most recent
+    resultsWithContent = resultsWithContent
+      .filter((r) => r.lastUpdated)
+      .sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated));
     return {
       searchResults,
       contentDetails: resultsWithContent,
     };
   } catch (error) {
-    console.error("[FactCheck] Error gathering fact checking data:", error);
+    console.error(
+      "[FactCheck] Error gathering fact checking data:",
+      error && error.toString ? error.toString() : error
+    );
     return {
       searchResults: [],
       contentDetails: [],
