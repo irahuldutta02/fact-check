@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getScrapedFactCheckData } from "../../utils/scraper";
 
 export async function POST(request) {
   try {
@@ -21,24 +22,62 @@ export async function POST(request) {
         },
         { status: 500 }
       );
-    }
-
-    // Initialize the Gemini AI
+    } // Get scraped data related to the statement for fact-checking
+    console.log("Scraping web data for fact checking...");
+    let scrapedData;
+    try {
+      scrapedData = await getScrapedFactCheckData(statement);
+    } catch (scrapingError) {
+      console.error("Error during web scraping:", scrapingError);
+      // Fallback to empty data but continue the process
+      scrapedData = { searchResults: [], contentDetails: [] };
+    } // Initialize the Gemini AI
     const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({
       model: "gemini-2.0-flash",
     });
 
-    // Create a structured prompt for fact checking
+    // Check if we have scraped data
+    const hasScrapedData =
+      scrapedData.searchResults.length > 0 ||
+      scrapedData.contentDetails.length > 0;
+
+    // Create a structured prompt that includes scraped data for fact checking
     const prompt = `
-      Act as a fact-checking expert. Analyze this statement and determine if it's TRUE, FALSE, or PARTIALLY TRUE:
+      Act as a fact-checking expert. Analyze this statement and determine if it's TRUE, FALSE, or PARTIALLY TRUE.
       
       Statement: "${statement}"
       
-      Please provide:
+      ${
+        hasScrapedData
+          ? `Here is real-time scraped information from the web to help with fact checking:
+      
+      SEARCH RESULTS:
+      ${scrapedData.searchResults
+        .map(
+          (result, index) =>
+            `${index + 1}. ${result.title || "No title"}\n   URL: ${
+              result.url || "No URL"
+            }\n   Snippet: ${result.snippet || "No snippet"}`
+        )
+        .join("\n\n")}
+      
+      DETAILED CONTENT:
+      ${scrapedData.contentDetails
+        .map(
+          (detail, index) =>
+            `--- FROM SOURCE ${index + 1}: ${detail.title || "No title"} ---\n${
+              detail.content || "No content available"
+            }\n`
+        )
+        .join("\n\n")}
+        
+      Based ONLY on the real-time data provided above,`
+          : `The web scraping attempt failed, so you'll need to use your training data to`
+      } carefully analyze the statement and provide:carefully analyze the statement and provide:
       1. A verdict (TRUE, FALSE, or PARTIALLY TRUE)
-      2. A detailed explanation of your reasoning
-      3. Sources that support your conclusion with URLs
+      2. A detailed explanation of your reasoning based on the provided web data
+      3. Sources that support your conclusion with URLs (from the provided sources)
       
       Format the response as a JSON object with the following structure:
       {
@@ -51,10 +90,10 @@ export async function POST(request) {
     `;
 
     // Get response from Gemini
+    console.log("Sending request to Gemini API with scraped data...");
     const result = await model.generateContent(prompt);
     const response = result.response;
-    const text = response.text();
-    // Parse the JSON response from Gemini
+    const text = response.text(); // Parse the JSON response from Gemini
     let parsedResponse;
     try {
       // Extract the JSON part from the response, handling any text before or after
@@ -97,6 +136,9 @@ export async function POST(request) {
           );
         }
       }
+
+      // Add information about web scraping status
+      parsedResponse.usedWebScraping = hasScrapedData;
     } catch (error) {
       console.error("Failed to parse Gemini response:", error);
       return Response.json(

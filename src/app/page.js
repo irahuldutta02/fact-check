@@ -6,6 +6,7 @@ import { FaEraser, FaLightbulb, FaLink, FaSpinner } from "react-icons/fa";
 import CopyToClipboard from "./components/CopyToClipboard";
 import LoadingSkeleton from "./components/LoadingSkeleton";
 import ResultFeedback from "./components/ResultFeedback";
+import ScrapedDataInfo from "./components/ScrapedDataInfo";
 import VerdictBadge from "./components/VerdictBadge";
 
 const MAX_CHAR_COUNT = 500;
@@ -121,13 +122,15 @@ export default function Home() {
               style={{ objectFit: "contain" }}
               priority
             />
-          </div>
+          </div>{" "}
           <h1 className="text-3xl font-bold text-primary-navy text-center">
             Fact Checker
-          </h1>
+          </h1>{" "}
           <p className="text-lg text-gray-600 text-center mt-2">
-            Verify facts with the power of Google Gemini AI
+            Verify facts with the power of Google Gemini AI and real-time web
+            data
           </p>
+          <ScrapedDataInfo />
         </div>
 
         {/* Input Section */}
@@ -190,10 +193,11 @@ export default function Home() {
                   : "bg-primary-navy text-white hover:bg-opacity-90"
               }`}
             >
+              {" "}
               {loading ? (
                 <>
                   <FaSpinner className="animate-spin mr-2" />
-                  Verifying...
+                  Scraping web data & verifying...
                 </>
               ) : (
                 "Verify with AI"
@@ -220,7 +224,6 @@ export default function Home() {
             <div className="mb-6">
               <VerdictBadge verdict={result.verdict} />
             </div>
-
             <div className="mb-6">
               <h2 className="text-xl font-bold text-primary-navy mb-3">
                 Analysis
@@ -229,7 +232,6 @@ export default function Home() {
                 <p>{result.explanation}</p>
               </div>
             </div>
-
             {result.sources && result.sources.length > 0 && (
               <div className="mb-6">
                 <h2 className="text-xl font-bold text-primary-navy mb-3">
@@ -251,8 +253,7 @@ export default function Home() {
                   ))}
                 </ul>
               </div>
-            )}
-
+            )}{" "}
             {/* Action bar - Copy, Feedback */}
             <div className="border-t pt-4 mt-6">
               <div className="flex flex-wrap justify-between items-center gap-4">
@@ -261,6 +262,20 @@ export default function Home() {
                     text={`${statement}\n\nVerdict: ${result.verdict}\n\n${result.explanation}`}
                     label="Copy result"
                   />
+                  {result.usedWebScraping !== undefined && (
+                    <div className="text-xs text-gray-500 ml-2 flex items-center">
+                      <div
+                        className={`w-2 h-2 rounded-full mr-1 ${
+                          result.usedWebScraping
+                            ? "bg-green-500"
+                            : "bg-yellow-500"
+                        }`}
+                      ></div>
+                      {result.usedWebScraping
+                        ? "Fact checked with real-time web data"
+                        : "Using trained knowledge (web scraping unavailable)"}
+                    </div>
+                  )}
                 </div>
 
                 <ResultFeedback onFeedback={handleFeedback} />
